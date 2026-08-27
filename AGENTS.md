@@ -1,0 +1,100 @@
+# AGENTS.md — fake-pix-provider
+
+> Master index for humans and AI agents. Read this **before** any implementation.
+
+## Project summary
+
+Synthetic PIX PSP (Go) for the AcmePay portfolio. This service **is** the
+provider: it creates a fake charge (EMV QR) and delivers a signed webhook to a
+caller-supplied `callback_url`. It is **not** the partner API
+(`POST /v1/payments`). HMAC + webhook JSON copy
+`POST /v1/webhooks/payment` from the AcmePay contract.
+
+Domain: personal skill `payments-domain`.
+
+## Stack
+
+| Layer | Choice |
+|-------|--------|
+| Runtime | Go 1.23 |
+| HTTP | stdlib `net/http` (no Gin / Fiber / Chi) |
+| Store | In-memory + `sync.Mutex` (process death = data loss) |
+| Crypto | stdlib `crypto/hmac` SHA-256, header `t=<unix>,v1=<hex>` |
+| Tests | `go test` + `httptest` |
+| Lint | `gofmt -l` |
+
+## Module map
+
+| Package | Responsibility | Doc |
+|---------|----------------|-----|
+| `cmd/provider` | Process entrypoint | `Docs/specs/fase-0-bootstrap.md` |
+| `internal/sign` | HMAC `t,v1` sign + verify | `Docs/specs/fase-1-charges-webhooks.md` |
+| `internal/deliver` | HTTP POST, retry classification | `Docs/specs/fase-1-charges-webhooks.md` |
+| `internal/store` | MemoryStore for charges | `Docs/specs/fase-1-charges-webhooks.md` |
+| `internal/httpapi` | mux + handlers | `Docs/specs/fase-1-charges-webhooks.md` |
+
+## Entrypoints
+
+| Path | Notes |
+|------|-------|
+| `GET /health` | Liveness |
+| `POST /v1/charges` | Create `PENDING` charge + synthetic QR |
+| `GET /v1/charges/{id}` | Charge detail (`last_delivery_status` after simulate) |
+| `POST /v1/charges/{id}/simulate` | `paid` / `expired` / `failed` → async signed webhook |
+
+## Quick lookup
+
+| Want to understand… | See |
+|---------------------|-----|
+| Fase 0 bootstrap | `Docs/specs/fase-0-bootstrap.md` |
+| Fase 1 charges + webhooks | `Docs/specs/fase-1-charges-webhooks.md` |
+| HMAC algorithm (Next twin) | `checkout-portal-next/lib/webhook-signature.ts` |
+| AcmePay webhook contract | `pix-wallet-api/Docs/specs/API_CONTRACT.md` |
+| ADRs | `Docs/adrs/` |
+
+## Agent workflow (mandatory)
+
+```
+1. Read AGENTS.md
+2. Read Docs/specs/<fase>.md
+3. Implement in internal/* with injected clock / http.Client / sleep
+4. go test ./... && test -z "$(gofmt -l .)"
+5. If behavior changed → update the phase spec
+6. PR with checklist below
+```
+
+**Spec without test does not close. Code without updating the spec does not close.**
+
+## Build phases
+
+| Fase | Scope | Doc |
+|------|-------|-----|
+| 0 | Spec-driven bootstrap + `go.mod` + CI | `Docs/specs/fase-0-bootstrap.md` |
+| 1 | Charges + simulate + signed webhook delivery | `Docs/specs/fase-1-charges-webhooks.md` |
+
+## Do NOT
+
+- Use `float`/`float64` for money — integer minor units only
+- Add Gin, Fiber, Chi, or another HTTP router
+- Add Postgres, Redis, Docker, or an outbox
+- Call a real PSP
+- Plug this callback into Laravel/Nest in v1 (curl + `httptest` only)
+- Change `pix-wallet-api`, `payment-api-nest`, Vue, or Next from this repo
+- Copy StarsPay production code or secrets
+- Invent a partner-API shape (`/v1/payments`) — this is the PSP surface
+
+## Naming
+
+- Packages: short nouns (`sign`, `deliver`, `store`, `httpapi`)
+- Amounts: `int64` minor units; currency ISO 4217 `BRL`
+- Webhook `provider` JSON field: `fake_pix`
+- Signature header: `X-AcmePay-Signature`
+
+## PR checklist
+
+- [ ] Spec in `Docs/specs/` updated (acceptance criteria checked)
+- [ ] `go test ./...` green
+- [ ] `gofmt -l` empty
+- [ ] No floats for money
+- [ ] Retries reuse the same `event_id`
+- [ ] Commits small and English
