@@ -38,12 +38,16 @@ type Charge struct {
 
 // MemoryStore holds charges in process memory. Restart drops everything.
 type MemoryStore struct {
-	mu      sync.Mutex
-	charges map[string]*Charge
+	mu          sync.Mutex
+	charges     map[string]*Charge
+	byPaymentID map[string]string // payment_id → charge id
 }
 
 func NewMemory() *MemoryStore {
-	return &MemoryStore{charges: make(map[string]*Charge)}
+	return &MemoryStore{
+		charges:     make(map[string]*Charge),
+		byPaymentID: make(map[string]string),
+	}
 }
 
 func (s *MemoryStore) Create(c Charge) Charge {
@@ -51,12 +55,29 @@ func (s *MemoryStore) Create(c Charge) Charge {
 	defer s.mu.Unlock()
 	cp := c
 	s.charges[c.ID] = &cp
+	if c.PaymentID != "" {
+		s.byPaymentID[c.PaymentID] = c.ID
+	}
 	return cp
 }
 
 func (s *MemoryStore) Get(id string) (Charge, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	c, ok := s.charges[id]
+	if !ok {
+		return Charge{}, false
+	}
+	return *c, true
+}
+
+func (s *MemoryStore) GetByPaymentID(paymentID string) (Charge, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id, ok := s.byPaymentID[paymentID]
+	if !ok {
+		return Charge{}, false
+	}
 	c, ok := s.charges[id]
 	if !ok {
 		return Charge{}, false

@@ -29,6 +29,25 @@ func TestCreateAndGet(t *testing.T) {
 	}
 }
 
+func TestGetByPaymentID(t *testing.T) {
+	s := NewMemory()
+	paymentID := "550e8400-e29b-41d4-a716-446655440000"
+	s.Create(Charge{
+		ID:        "chg_pay",
+		Status:    StatusPending,
+		Amount:    1500,
+		Currency:  "BRL",
+		PaymentID: paymentID,
+	})
+	got, ok := s.GetByPaymentID(paymentID)
+	if !ok || got.ID != "chg_pay" || got.Amount != 1500 {
+		t.Fatalf("get by payment = %+v ok=%v", got, ok)
+	}
+	if _, ok := s.GetByPaymentID("00000000-0000-0000-0000-000000000000"); ok {
+		t.Fatal("expected missing payment_id")
+	}
+}
+
 func TestClaimSimulateOnceUnderRace(t *testing.T) {
 	s := NewMemory()
 	s.Create(Charge{ID: "chg_race", Status: StatusPending, Amount: 100, Currency: "BRL"})

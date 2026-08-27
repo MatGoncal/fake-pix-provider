@@ -108,6 +108,15 @@ func (s *Server) handleGetCharge(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toChargeResponse(ch))
 }
 
+func (s *Server) handleGetChargeByPayment(w http.ResponseWriter, r *http.Request) {
+	ch, ok := s.store.GetByPaymentID(r.PathValue("payment_id"))
+	if !ok {
+		writeJSON(w, http.StatusNotFound, errorBody{Error: "not_found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, toChargeResponse(ch))
+}
+
 func (s *Server) handleSimulate(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var req simulateRequest

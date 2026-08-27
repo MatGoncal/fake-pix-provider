@@ -14,10 +14,10 @@ Fictional portfolio project. No real PSP.
 
 ```mermaid
 flowchart LR
-  Client["curl / tests"] -->|"POST /v1/charges"| Go["fake-pix-provider"]
-  Go -->|"201 QR synthetic"| Client
-  Client -->|"POST .../simulate paid"| Go
-  Go -->|"POST signed t,v1"| Callback["httptest or URL"]
+  Wallet["Laravel / Nest POST /v1/payments"] -->|"POST /v1/charges"| Go["fake-pix-provider"]
+  Go -->|"201 QR synthetic"| Wallet
+  Demo["curl / README"] -->|"GET by-payment + simulate"| Go
+  Go -->|"POST signed t,v1"| Callback["API POST /v1/webhooks/payment"]
 ```
 
 | Route | Effect |
@@ -25,6 +25,7 @@ flowchart LR
 | `GET /health` | Liveness |
 | `POST /v1/charges` | Create `PENDING` charge + fake EMV QR |
 | `GET /v1/charges/{id}` | Detail (`last_delivery_status` after simulate) |
+| `GET /v1/charges/by-payment/{payment_id}` | Lookup by wallet `payment_id` (404 if missing) |
 | `POST /v1/charges/{id}/simulate` | `paid` / `expired` / `failed` → async signed webhook |
 
 HMAC is identical to AcmePay / `checkout-portal-next/lib/webhook-signature.ts`:
@@ -58,8 +59,37 @@ curl -s -X POST http://localhost:8080/v1/charges \
   }'
 ```
 
-Simulate payment (async **202**; a second simulate returns **200**
-`already_simulated` and does not POST again):
+### Wallet demo (create → by-payment → simulate)
+
+With `fake-pix-provider` on `:8080` and Laravel Sail (or Nest on `:3001`) up,
+create the payment on the **wallet** (it POSTs `/v1/charges` for you), look up
+the charge without scraping logs, then simulate. Point `callback_url` at the
+API webhook the Go process on the host can reach
+(`http://localhost/v1/webhooks/payment` for Sail).
+
+```bash
+# 1. Create on the wallet — copy `id` from the 201 body
+curl -s -X POST http://localhost/v1/payments \
+  -H "Authorization: Bearer acmepay_demo_key_change_me" \
+  -H "Content-Type: application/json" \
+  -d '{"amount":1500,"currency":"BRL","external_id":"demo-1"}'
+
+# 2. Lookup charge id by that payment UUID
+curl -s http://localhost:8080/v1/charges/by-payment/<payment_id> \
+  -H "Authorization: Bearer fake-pix-demo"
+
+# 3. Simulate paid (async 202). Go POSTs HMAC t,v1 to callback_url.
+curl -s -X POST http://localhost:8080/v1/charges/<charge_id>/simulate \
+  -H "Authorization: Bearer fake-pix-demo" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"payment.paid"}'
+```
+
+A second simulate returns **200** `already_simulated` and does not POST again.
+The wallet queue worker must be running so the job can mark `PAID`
+(`./vendor/bin/sail artisan queue:work` on Laravel).
+
+Direct simulate (when you already have a charge id from create):
 
 ```bash
 curl -s -X POST http://localhost:8080/v1/charges/<id>/simulate \

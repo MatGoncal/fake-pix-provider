@@ -56,6 +56,7 @@ func New(cfg Config) *Server {
 	}
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 	s.mux.HandleFunc("POST /v1/charges", s.requireAPIKey(s.handleCreateCharge))
+	s.mux.HandleFunc("GET /v1/charges/by-payment/{payment_id}", s.requireAPIKey(s.handleGetChargeByPayment))
 	s.mux.HandleFunc("GET /v1/charges/{id}", s.requireAPIKey(s.handleGetCharge))
 	s.mux.HandleFunc("POST /v1/charges/{id}/simulate", s.requireAPIKey(s.handleSimulate))
 	return s

@@ -107,6 +107,39 @@ func TestGetCharge404(t *testing.T) {
 	}
 }
 
+func TestGetChargeByPayment(t *testing.T) {
+	_, api := newTestAPI(t, "")
+	created := createCharge(t, api.URL, "http://127.0.0.1:9/cb", 1500)
+
+	resp, err := http.Get(api.URL + "/v1/charges/by-payment/" + testPaymentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var got chargeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != created.ID || got.PaymentID != testPaymentID {
+		t.Fatalf("by-payment = %+v, want id=%s payment_id=%s", got, created.ID, testPaymentID)
+	}
+	if got.Amount != 1500 || got.QRCode != created.QRCode {
+		t.Fatalf("by-payment money/qr mismatch: %+v", got)
+	}
+
+	missing, err := http.Get(api.URL + "/v1/charges/by-payment/00000000-0000-0000-0000-000000000000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer missing.Body.Close()
+	if missing.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing status = %d, want 404", missing.StatusCode)
+	}
+}
+
 func TestCreateSimulatePaidDeliversSignedIntegerAmount(t *testing.T) {
 	var (
 		mu      sync.Mutex
