@@ -1,0 +1,19 @@
+# Binaries
+/bin/
+/fake-pix-provider
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+
+# Env
+.env
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
