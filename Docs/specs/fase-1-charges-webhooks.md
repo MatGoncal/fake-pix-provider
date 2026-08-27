@@ -17,6 +17,7 @@ wallet will expect on `POST /v1/webhooks/payment`).
 | GET | `/health` | none | Liveness |
 | POST | `/v1/charges` | optional API key | Create `PENDING` charge + fake EMV QR |
 | GET | `/v1/charges/{id}` | optional API key | Charge detail |
+| GET | `/v1/charges/by-payment/{payment_id}` | optional API key | Lookup by wallet `payment_id` (404 if missing) |
 | POST | `/v1/charges/{id}/simulate` | optional API key | `paid` / `expired` / `failed` → async webhook |
 
 Inbound auth: if `FAKE_PIX_API_KEY` is set, require `Authorization: Bearer` or
@@ -83,13 +84,22 @@ the AcmePay contract):
 
 GET charge after simulate exposes `last_delivery_status`.
 
+**GET /v1/charges/by-payment/{payment_id}**
+
+Same JSON as `GET /v1/charges/{id}`. Lets a README demo find the charge id
+after `POST /v1/payments` on Laravel/Nest without scraping logs. Unknown
+`payment_id` → **404**. Charge id is not persisted on the wallet APIs.
+
 ## Fluxo (passo a passo)
 
-1. `POST /v1/charges` stores a `PENDING` charge (memory + mutex) and returns QR.
-2. `POST .../simulate` claims the charge event **once**; loser of the race gets
+1. `POST /v1/charges` stores a `PENDING` charge (memory + mutex, indexed by
+   `payment_id`) and returns QR.
+2. Wallet demo: `POST /v1/payments` on Laravel/Nest → `GET /v1/charges/by-payment/{payment_id}`
+   → `POST .../simulate` → signed webhook on the API.
+3. `POST .../simulate` claims the charge event **once**; loser of the race gets
    `already_simulated`.
-3. Winner signs the raw JSON (`internal/sign`) and enqueues `internal/deliver`.
-4. Deliver POSTs the **same** body (same `event_id`) up to 5 times:
+4. Winner signs the raw JSON (`internal/sign`) and enqueues `internal/deliver`.
+5. Deliver POSTs the **same** body (same `event_id`) up to 5 times:
    - 2xx → stop
    - 4xx except 429 → permanent, no retry
    - 429, 5xx, network → retry with backoff `[50ms, 150ms, 450ms, 1350ms]`
@@ -103,7 +113,7 @@ Provider surface (not AcmePay partner codes):
 |------|----------|
 | 400 | Invalid amount / currency / type / JSON |
 | 401 | Inbound API key missing or wrong (only when env is set) |
-| 404 | Unknown charge id |
+| 404 | Unknown charge id or unknown `payment_id` |
 | 200 | `already_simulated` on a claimed charge |
 
 ## Critérios de aceite
@@ -118,6 +128,7 @@ Provider surface (not AcmePay partner codes):
 - [x] `simulate paid` → callback receives valid `t=,v1=` and JSON `amount` integer
 - [x] Two parallel `simulate` on the same charge → **one** POST to the callback
 - [x] GET charge shows `last_delivery_status` after async delivery
+- [x] `GET /v1/charges/by-payment/{payment_id}` returns the charge; unknown id → 404
 
 ## Testes obrigatórios
 
@@ -125,6 +136,7 @@ Provider surface (not AcmePay partner codes):
 - [x] Unit — deliver retry classification via `httptest` (no long sleep)
 - [x] Integração — create + simulate `paid` against `httptest` callback
 - [x] Concorrência — two parallel `simulate` → single delivery
+- [x] Integração — create then `GET .../by-payment/{payment_id}`; missing → 404
 
 ## Variáveis de ambiente
 

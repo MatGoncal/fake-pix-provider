@@ -40,6 +40,7 @@ Domain: personal skill `payments-domain`.
 | `GET /health` | Liveness |
 | `POST /v1/charges` | Create `PENDING` charge + synthetic QR |
 | `GET /v1/charges/{id}` | Charge detail (`last_delivery_status` after simulate) |
+| `GET /v1/charges/by-payment/{payment_id}` | Lookup by wallet `payment_id` (404 if missing) |
 | `POST /v1/charges/{id}/simulate` | `paid` / `expired` / `failed` → async signed webhook |
 
 ## Quick lookup
@@ -78,8 +79,8 @@ Domain: personal skill `payments-domain`.
 - Add Gin, Fiber, Chi, or another HTTP router
 - Add Postgres, Redis, Docker, or an outbox
 - Call a real PSP
-- Plug this callback into Laravel/Nest in v1 (curl + `httptest` only)
 - Change `pix-wallet-api`, `payment-api-nest`, Vue, or Next from this repo
+  (wallet APIs call this process; wiring lives there)
 - Copy StarsPay production code or secrets
 - Invent a partner-API shape (`/v1/payments`) — this is the PSP surface
 
