@@ -85,7 +85,7 @@ func (s *Server) handleCreateCharge(w http.ResponseWriter, r *http.Request) {
 
 	now := s.clock()
 	emv := fakeEMV(req.Currency, req.Amount, now.Unix(), req.PaymentID)
-	ch := s.store.Create(store.Charge{
+	ch, created := s.store.CreateOrGet(store.Charge{
 		ID:           newID(),
 		Status:       store.StatusPending,
 		Amount:       req.Amount,
@@ -96,7 +96,11 @@ func (s *Server) handleCreateCharge(w http.ResponseWriter, r *http.Request) {
 		CopyPaste:    emv,
 		ProviderTxID: "pix_tx_" + newID(),
 	})
-	writeJSON(w, http.StatusCreated, toChargeResponse(ch))
+	status := http.StatusCreated
+	if !created {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, toChargeResponse(ch))
 }
 
 func (s *Server) handleGetCharge(w http.ResponseWriter, r *http.Request) {
