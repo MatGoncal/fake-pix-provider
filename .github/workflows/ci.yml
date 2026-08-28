@@ -8,6 +8,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: fake_pix
+          POSTGRES_PASSWORD: fake_pix
+          POSTGRES_DB: fake_pix_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fake_pix -d fake_pix_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -25,6 +39,8 @@ jobs:
           fi
 
       - name: Test
+        env:
+          TEST_DATABASE_URL: postgres://fake_pix:fake_pix@localhost:5432/fake_pix_test?sslmode=disable
         run: go test ./...
 
   docker:
