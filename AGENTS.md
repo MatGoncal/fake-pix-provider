@@ -18,11 +18,11 @@ Domain: personal skill `payments-domain`.
 |-------|--------|
 | Runtime | Go 1.23 |
 | HTTP | stdlib `net/http` (no Gin / Fiber / Chi) |
-| Store | In-memory + `sync.Mutex` (process death = data loss) |
+| Store | `MemoryStore` (tests / no DSN) · `PostgresStore` + outbox when `DATABASE_URL` is set |
 | Crypto | stdlib `crypto/hmac` SHA-256, header `t=<unix>,v1=<hex>` |
-| Tests | `go test` + `httptest` |
+| Tests | `go test` + `httptest` (MemoryStore); Postgres tests behind `TEST_DATABASE_URL` |
 | Lint | `gofmt -l` |
-| Packaging | Docker (fase 3); process inside is still stdlib + MemoryStore |
+| Packaging | Docker (fase 3); demo compose adds Postgres (fase 4) |
 
 ## Module map
 
@@ -31,7 +31,8 @@ Domain: personal skill `payments-domain`.
 | `cmd/provider` | Process entrypoint | `Docs/specs/fase-0-bootstrap.md` |
 | `internal/sign` | HMAC `t,v1` sign + verify | `Docs/specs/fase-1-charges-webhooks.md` |
 | `internal/deliver` | HTTP POST, retry classification | `Docs/specs/fase-1-charges-webhooks.md` |
-| `internal/store` | MemoryStore + CreateOrGet by `payment_id` | `Docs/specs/fase-1-charges-webhooks.md`, `Docs/specs/fase-2-idempotent-create.md` |
+| `internal/store` | MemoryStore + PostgresStore + CreateOrGet by `payment_id` | `Docs/specs/fase-1-charges-webhooks.md`, `Docs/specs/fase-2-idempotent-create.md`, `Docs/specs/fase-4-durable-outbox.md` |
+| `internal/outbox` | In-process poller (same TX as simulate) | `Docs/specs/fase-4-durable-outbox.md` |
 | `internal/httpapi` | mux + handlers (201 create / 200 replay) | `Docs/specs/fase-1-charges-webhooks.md`, `Docs/specs/fase-2-idempotent-create.md` |
 
 ## Entrypoints
@@ -52,6 +53,7 @@ Domain: personal skill `payments-domain`.
 | Fase 1 charges + webhooks | `Docs/specs/fase-1-charges-webhooks.md` |
 | Fase 2 idempotent create | `Docs/specs/fase-2-idempotent-create.md` |
 | Fase 3 Docker packaging | `Docs/specs/fase-3-docker.md` |
+| Fase 4 durable store + outbox | `Docs/specs/fase-4-durable-outbox.md` |
 | HMAC algorithm (Next twin) | `checkout-portal-next/lib/webhook-signature.ts` |
 | AcmePay webhook contract | `pix-wallet-api/Docs/specs/API_CONTRACT.md` |
 | ADRs | `Docs/adrs/` |
@@ -77,12 +79,13 @@ Domain: personal skill `payments-domain`.
 | 1 | Charges + simulate + signed webhook delivery | `Docs/specs/fase-1-charges-webhooks.md` |
 | 2 | Idempotent create by `payment_id` (200 replay / 201 create) | `Docs/specs/fase-2-idempotent-create.md` |
 | 3 | Docker packaging (MemoryStore unchanged) | `Docs/specs/fase-3-docker.md` |
+| 4 | PostgresStore + outbox (same TX as simulate) | `Docs/specs/fase-4-durable-outbox.md` |
 
 ## Do NOT
 
 - Use `float`/`float64` for money — integer minor units only
 - Add Gin, Fiber, Chi, or another HTTP router
-- Add Postgres, Redis, or an outbox
+- Add Redis or an external queue — outbox poller stays in-process
 - Call a real PSP
 - Change `pix-wallet-api`, `payment-api-nest`, Vue, or Next from this repo
   (wallet APIs call this process; wiring lives there)

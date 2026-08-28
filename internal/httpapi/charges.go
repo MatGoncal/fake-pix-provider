@@ -44,21 +44,6 @@ type simulateRequest struct {
 	Type string `json:"type"`
 }
 
-type webhookPayload struct {
-	EventID    string          `json:"event_id"`
-	Provider   string          `json:"provider"`
-	Type       string          `json:"type"`
-	PaymentID  string          `json:"payment_id"`
-	OccurredAt string          `json:"occurred_at"`
-	Data       json.RawMessage `json:"data"`
-}
-
-type paidData struct {
-	ProviderTxID string `json:"provider_tx_id"`
-	Amount       int64  `json:"amount"`
-	Currency     string `json:"currency"`
-}
-
 func (s *Server) handleCreateCharge(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var req createChargeRequest
@@ -85,7 +70,7 @@ func (s *Server) handleCreateCharge(w http.ResponseWriter, r *http.Request) {
 
 	now := s.clock()
 	emv := fakeEMV(req.Currency, req.Amount, now.Unix(), req.PaymentID)
-	ch, created := s.store.CreateOrGet(store.Charge{
+	ch, created, err := s.store.CreateOrGet(store.Charge{
 		ID:           newID(),
 		Status:       store.StatusPending,
 		Amount:       req.Amount,
@@ -96,6 +81,10 @@ func (s *Server) handleCreateCharge(w http.ResponseWriter, r *http.Request) {
 		CopyPaste:    emv,
 		ProviderTxID: "pix_tx_" + newID(),
 	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "internal"})
+		return
+	}
 	status := http.StatusCreated
 	if !created {
 		status = http.StatusOK
@@ -104,7 +93,11 @@ func (s *Server) handleCreateCharge(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetCharge(w http.ResponseWriter, r *http.Request) {
-	ch, ok := s.store.Get(r.PathValue("id"))
+	ch, ok, err := s.store.Get(r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "internal"})
+		return
+	}
 	if !ok {
 		writeJSON(w, http.StatusNotFound, errorBody{Error: "not_found"})
 		return
@@ -113,7 +106,11 @@ func (s *Server) handleGetCharge(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetChargeByPayment(w http.ResponseWriter, r *http.Request) {
-	ch, ok := s.store.GetByPaymentID(r.PathValue("payment_id"))
+	ch, ok, err := s.store.GetByPaymentID(r.PathValue("payment_id"))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "internal"})
+		return
+	}
 	if !ok {
 		writeJSON(w, http.StatusNotFound, errorBody{Error: "not_found"})
 		return
@@ -134,7 +131,11 @@ func (s *Server) handleSimulate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	eventID := "evt_" + newID()
-	ch, claim := s.store.ClaimSimulate(r.PathValue("id"), req.Type, eventID)
+	ch, claim, err := s.store.ClaimSimulate(r.PathValue("id"), req.Type, eventID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "internal"})
+		return
+	}
 	switch claim {
 	case store.ClaimNotFound:
 		writeJSON(w, http.StatusNotFound, errorBody{Error: "not_found"})
@@ -147,8 +148,16 @@ func (s *Server) handleSimulate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.disableInlineDelivery {
+		writeJSON(w, http.StatusAccepted, map[string]string{
+			"event_id": ch.EventID,
+			"delivery": "pending",
+		})
+		return
+	}
+
 	now := s.clock().UTC()
-	body, err := marshalWebhook(ch, now.Format(time.RFC3339))
+	body, err := store.MarshalWebhook(ch, now.Format(time.RFC3339))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "internal"})
 		return
@@ -164,35 +173,12 @@ func (s *Server) handleSimulate(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer s.inflight.Done()
 		out := s.deliver.PostJSON(context.Background(), callbackURL, body, headers)
-		s.store.SetDeliveryStatus(chargeID, deliveryStatus(out))
+		_ = s.store.SetDeliveryStatus(chargeID, deliveryStatus(out))
 	}()
 
 	writeJSON(w, http.StatusAccepted, map[string]string{
 		"event_id": ch.EventID,
 		"delivery": "pending",
-	})
-}
-
-func marshalWebhook(ch store.Charge, occurredAt string) ([]byte, error) {
-	data := json.RawMessage(`{}`)
-	if ch.EventType == "payment.paid" {
-		raw, err := json.Marshal(paidData{
-			ProviderTxID: ch.ProviderTxID,
-			Amount:       ch.Amount,
-			Currency:     ch.Currency,
-		})
-		if err != nil {
-			return nil, err
-		}
-		data = raw
-	}
-	return json.Marshal(webhookPayload{
-		EventID:    ch.EventID,
-		Provider:   "fake_pix",
-		Type:       ch.EventType,
-		PaymentID:  ch.PaymentID,
-		OccurredAt: occurredAt,
-		Data:       data,
 	})
 }
 
