@@ -30,15 +30,15 @@ Domain: personal skill `payments-domain`.
 | `cmd/provider` | Process entrypoint | `Docs/specs/fase-0-bootstrap.md` |
 | `internal/sign` | HMAC `t,v1` sign + verify | `Docs/specs/fase-1-charges-webhooks.md` |
 | `internal/deliver` | HTTP POST, retry classification | `Docs/specs/fase-1-charges-webhooks.md` |
-| `internal/store` | MemoryStore for charges | `Docs/specs/fase-1-charges-webhooks.md` |
-| `internal/httpapi` | mux + handlers | `Docs/specs/fase-1-charges-webhooks.md` |
+| `internal/store` | MemoryStore + CreateOrGet by `payment_id` | `Docs/specs/fase-1-charges-webhooks.md`, `Docs/specs/fase-2-idempotent-create.md` |
+| `internal/httpapi` | mux + handlers (201 create / 200 replay) | `Docs/specs/fase-1-charges-webhooks.md`, `Docs/specs/fase-2-idempotent-create.md` |
 
 ## Entrypoints
 
 | Path | Notes |
 |------|-------|
 | `GET /health` | Liveness |
-| `POST /v1/charges` | Create `PENDING` charge + synthetic QR |
+| `POST /v1/charges` | Create `PENDING` charge + synthetic QR (**201** first; **200** replay by `payment_id`) |
 | `GET /v1/charges/{id}` | Charge detail (`last_delivery_status` after simulate) |
 | `GET /v1/charges/by-payment/{payment_id}` | Lookup by wallet `payment_id` (404 if missing) |
 | `POST /v1/charges/{id}/simulate` | `paid` / `expired` / `failed` → async signed webhook |
@@ -49,6 +49,7 @@ Domain: personal skill `payments-domain`.
 |---------------------|-----|
 | Fase 0 bootstrap | `Docs/specs/fase-0-bootstrap.md` |
 | Fase 1 charges + webhooks | `Docs/specs/fase-1-charges-webhooks.md` |
+| Fase 2 idempotent create | `Docs/specs/fase-2-idempotent-create.md` |
 | HMAC algorithm (Next twin) | `checkout-portal-next/lib/webhook-signature.ts` |
 | AcmePay webhook contract | `pix-wallet-api/Docs/specs/API_CONTRACT.md` |
 | ADRs | `Docs/adrs/` |
@@ -72,6 +73,7 @@ Domain: personal skill `payments-domain`.
 |------|-------|-----|
 | 0 | Spec-driven bootstrap + `go.mod` + CI | `Docs/specs/fase-0-bootstrap.md` |
 | 1 | Charges + simulate + signed webhook delivery | `Docs/specs/fase-1-charges-webhooks.md` |
+| 2 | Idempotent create by `payment_id` (200 replay / 201 create) | `Docs/specs/fase-2-idempotent-create.md` |
 
 ## Do NOT
 

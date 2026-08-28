@@ -53,6 +53,25 @@ func NewMemory() *MemoryStore {
 func (s *MemoryStore) Create(c Charge) Charge {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.insertLocked(c)
+}
+
+// CreateOrGet returns the existing charge for payment_id when present.
+// created is true only when this call stored a new charge.
+func (s *MemoryStore) CreateOrGet(c Charge) (Charge, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c.PaymentID != "" {
+		if id, ok := s.byPaymentID[c.PaymentID]; ok {
+			if existing, exists := s.charges[id]; exists {
+				return *existing, false
+			}
+		}
+	}
+	return s.insertLocked(c), true
+}
+
+func (s *MemoryStore) insertLocked(c Charge) Charge {
 	cp := c
 	s.charges[c.ID] = &cp
 	if c.PaymentID != "" {

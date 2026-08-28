@@ -95,6 +95,49 @@ func TestCreateRejectsInvalidAmountAndCurrency(t *testing.T) {
 	}
 }
 
+func TestCreateChargeReplaySamePaymentID(t *testing.T) {
+	_, api := newTestAPI(t, "")
+	first := createCharge(t, api.URL, "http://127.0.0.1:9/cb", 1500)
+
+	body := fmt.Sprintf(
+		`{"amount":9900,"currency":"BRL","payment_id":%q,"callback_url":%q}`,
+		testPaymentID, "http://127.0.0.1:9/other",
+	)
+	resp := postJSON(t, api.URL+"/v1/charges", body)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("replay status = %d body = %s, want 200", resp.StatusCode, raw)
+	}
+	var replay chargeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&replay); err != nil {
+		t.Fatal(err)
+	}
+	if replay.ID != first.ID {
+		t.Fatalf("replay id = %s, want %s", replay.ID, first.ID)
+	}
+	if replay.QRCode != first.QRCode || replay.Amount != 1500 {
+		t.Fatalf("replay = %+v, want original charge", replay)
+	}
+
+	got := getCharge(t, api.URL, first.ID)
+	if got.ID != first.ID {
+		t.Fatalf("store charge = %+v", got)
+	}
+	byPay, err := http.Get(api.URL + "/v1/charges/by-payment/" + testPaymentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer byPay.Body.Close()
+	var listed chargeResponse
+	if err := json.NewDecoder(byPay.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	if listed.ID != first.ID {
+		t.Fatalf("by-payment after replay = %+v, want %s", listed, first.ID)
+	}
+}
+
 func TestGetCharge404(t *testing.T) {
 	_, api := newTestAPI(t, "")
 	resp, err := http.Get(api.URL + "/v1/charges/missing")
@@ -354,7 +397,7 @@ func TestAPIKeyRequiredWhenConfigured(t *testing.T) {
 	}
 
 	req2, err := http.NewRequest(http.MethodPost, api.URL+"/v1/charges", strings.NewReader(
-		`{"amount":1500,"currency":"BRL","payment_id":"550e8400-e29b-41d4-a716-446655440000","callback_url":"http://127.0.0.1/cb"}`,
+		`{"amount":1500,"currency":"BRL","payment_id":"11111111-1111-1111-1111-111111111111","callback_url":"http://127.0.0.1/cb"}`,
 	))
 	if err != nil {
 		t.Fatal(err)
