@@ -127,11 +127,13 @@ demo path.
 
 ```bash
 go test ./...
+# When TEST_DATABASE_URL is set, serialize packages so Truncate cannot race:
+# go test -p 1 ./...
 test -z "$(gofmt -l .)"
 docker build -t fake-pix-provider:local .
 ```
 
-Postgres tests skip unless `TEST_DATABASE_URL` is set (CI always sets it).
+Postgres tests skip unless `TEST_DATABASE_URL` is set (CI always sets it and uses `-p 1`).
 
 ## Docs
 
