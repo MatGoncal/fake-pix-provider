@@ -5,6 +5,18 @@ EMV charge and, on `simulate`, POSTs the canonical AcmePay webhook
 (`provider=fake_pix`) with Stripe-style `t=<unix>,v1=<hex>` HMAC.
 
 It is **not** the partner API (`POST /v1/payments`). Callers invent `payment_id`
+(the UUID AcmePay expects on `POST /v1/webhooks/payment`). Stdlib HTTP.
+Docker / compose uses **Postgres + an in-process outbox** so restart keeps
+charges and retries undelivered webhooks. `go test` and `go run` without
+`DATABASE_URL` still use the in-memory store.
+
+Fictional portfolio project. No real PSP.
+
+Synthetic PIX PSP in Go. This process **is** the provider: it creates a fake
+EMV charge and, on `simulate`, POSTs the canonical AcmePay webhook
+(`provider=fake_pix`) with Stripe-style `t=<unix>,v1=<hex>` HMAC.
+
+It is **not** the partner API (`POST /v1/payments`). Callers invent `payment_id`
 (the UUID AcmePay expects on `POST /v1/webhooks/payment`). Stdlib HTTP;
 in-memory store — **container restart drops all charges**.
 
@@ -47,6 +59,10 @@ curl -s http://localhost:8080/health
 When this process runs in Docker, `callback_url` must be a hostname the
 **container** can resolve (`laravel.test`, `api`, or `host.docker.internal`),
 not `http://localhost/...` on the operator's machine.
+
+Compose also starts Postgres on host `:5435`. Restart `fake-pix` after create:
+`GET /v1/charges/by-payment/{id}` still 200. Restart after simulate: the
+outbox poller re-POSTs the same `event_id`.
 
 Create a charge (point `callback_url` at anything that accepts POST — tests use
 `httptest`):
@@ -94,6 +110,13 @@ A second simulate returns **200** `already_simulated` and does not POST again.
 The wallet queue worker must be running so the job can mark `PAID`
 (`./vendor/bin/sail artisan queue:work` on Laravel).
 
+```bash
+# Charge still exists after a PSP restart
+docker compose restart fake-pix
+curl -s http://localhost:8080/v1/charges/by-payment/550e8400-e29b-41d4-a716-446655440000 \
+  -H "Authorization: Bearer fake-pix-demo"
+```
+
 Inbound auth also accepts `X-Api-Key: fake-pix-demo`. Amounts are integer minor
 units (`1500` = R$ 15,00). Never floats.
 
@@ -104,12 +127,16 @@ demo path.
 
 ```bash
 go test ./...
+# When TEST_DATABASE_URL is set, serialize packages so Truncate cannot race:
+# go test -p 1 ./...
 test -z "$(gofmt -l .)"
 docker build -t fake-pix-provider:local .
 ```
 
+Postgres tests skip unless `TEST_DATABASE_URL` is set (CI always sets it and uses `-p 1`).
+
 ## Docs
 
 See [AGENTS.md](AGENTS.md) for the module map and agent workflow.
-Phase spec: [Docs/specs/fase-3-docker.md](Docs/specs/fase-3-docker.md).
+Phase spec: [Docs/specs/fase-4-durable-outbox.md](Docs/specs/fase-4-durable-outbox.md).
 ADR: [Docs/adrs/001-stdlib-and-in-memory.md](Docs/adrs/001-stdlib-and-in-memory.md).

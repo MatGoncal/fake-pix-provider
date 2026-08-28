@@ -14,22 +14,25 @@ const maxBodyBytes = 1 << 20
 
 // Server is the fake PIX PSP HTTP surface (stdlib mux, no third-party router).
 type Server struct {
-	store         *store.MemoryStore
-	deliver       *deliver.Client
-	webhookSecret string
-	apiKey        string
-	clock         func() time.Time
+	store                 store.Store
+	deliver               *deliver.Client
+	webhookSecret         string
+	apiKey                string
+	clock                 func() time.Time
+	disableInlineDelivery bool
 
 	mux      *http.ServeMux
 	inflight sync.WaitGroup
 }
 
 type Config struct {
-	Store         *store.MemoryStore
+	Store         store.Store
 	Deliver       *deliver.Client
 	WebhookSecret string
 	APIKey        string
 	Clock         func() time.Time
+	// DisableInlineDelivery skips the simulate goroutine (Postgres outbox poller).
+	DisableInlineDelivery bool
 }
 
 func New(cfg Config) *Server {
@@ -47,12 +50,13 @@ func New(cfg Config) *Server {
 	}
 
 	s := &Server{
-		store:         cfg.Store,
-		deliver:       cfg.Deliver,
-		webhookSecret: cfg.WebhookSecret,
-		apiKey:        cfg.APIKey,
-		clock:         cfg.Clock,
-		mux:           http.NewServeMux(),
+		store:                 cfg.Store,
+		deliver:               cfg.Deliver,
+		webhookSecret:         cfg.WebhookSecret,
+		apiKey:                cfg.APIKey,
+		clock:                 cfg.Clock,
+		disableInlineDelivery: cfg.DisableInlineDelivery,
+		mux:                   http.NewServeMux(),
 	}
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 	s.mux.HandleFunc("POST /v1/charges", s.requireAPIKey(s.handleCreateCharge))

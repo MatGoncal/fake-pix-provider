@@ -1,4 +1,20 @@
 services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: fake_pix
+      POSTGRES_PASSWORD: fake_pix
+      POSTGRES_DB: fake_pix
+    ports:
+      - "${FORWARD_FAKE_PIX_DB_PORT:-5435}:5432"
+    volumes:
+      - fake-pix-pg:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fake_pix -d fake_pix"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   fake-pix:
     build: .
     image: fake-pix-provider:local
@@ -10,9 +26,16 @@ services:
       PORT: "8080"
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-webhook-secret}
       FAKE_PIX_API_KEY: ${FAKE_PIX_API_KEY:-fake-pix-demo}
+      DATABASE_URL: postgres://fake_pix:fake_pix@postgres:5432/fake_pix?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
       interval: 5s
       timeout: 3s
       retries: 5
       start_period: 5s
+
+volumes:
+  fake-pix-pg:
