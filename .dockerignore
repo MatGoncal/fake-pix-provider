@@ -1,0 +1,12 @@
+# git / docs — not needed in the image
+.git
+.github
+Docs
+*.md
+AGENTS.md
+.env
+.env.example
+compose.yaml
+docker-compose.yml
+.dockerignore
+.gitignore

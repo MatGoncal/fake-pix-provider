@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted (amended 2026-08-28: Docker is packaging only)
 
 ## Context
 
@@ -21,11 +21,21 @@ product rather than a readable stdlib service.
 - Charges live in an in-memory `MemoryStore`. Process exit drops all data.
 - Clock, `http.Client`, and retry sleep are injected so HMAC window and retry
   tests do not wait on wall-clock.
+- **Docker (fase 3) is packaging**, not a stack change: multi-stage image +
+  compose so wallet stacks can `up` the binary. The process inside the
+  container is the same stdlib server and `MemoryStore`. Adding Docker does
+  **not** authorize Gin, Postgres, Redis, or an outbox (those stay closed
+  until a later ADR / fase 4).
 
 ## Consequences
 
-- Restart is a full reset; there is no outbox and no durable delivery log.
+- Restart (process or container) is a full reset; there is no outbox and no
+  durable delivery log. `GET /v1/charges/by-payment/{id}` 404s after restart.
 - `simulate` can claim an event once under the mutex; the race loser returns
   `already_simulated` and must not POST again.
 - Tests use `httptest` and `go test ./...`. CI is `gofmt -l` plus that suite.
-- Plugging the callback into Laravel/Nest is out of v1 (curl / `httptest` only).
+  An optional `docker build` job only proves the image compiles.
+- Wallet APIs call this process over HTTP. When this process runs in Docker,
+  `callback_url` must be a name the **container** can resolve (Sail
+  `laravel.test`, Nest `api` / `host.docker.internal`) — not `localhost` on
+  the operator's host.

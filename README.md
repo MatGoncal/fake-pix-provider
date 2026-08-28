@@ -5,8 +5,8 @@ EMV charge and, on `simulate`, POSTs the canonical AcmePay webhook
 (`provider=fake_pix`) with Stripe-style `t=<unix>,v1=<hex>` HMAC.
 
 It is **not** the partner API (`POST /v1/payments`). Callers invent `payment_id`
-(the UUID AcmePay expects on `POST /v1/webhooks/payment`). Stdlib only;
-in-memory store — restart drops all charges.
+(the UUID AcmePay expects on `POST /v1/webhooks/payment`). Stdlib HTTP;
+in-memory store — **container restart drops all charges**.
 
 Fictional portfolio project. No real PSP.
 
@@ -22,7 +22,7 @@ flowchart LR
 
 | Route | Effect |
 |-------|--------|
-| `GET /health` | Liveness |
+| `GET /health` | Liveness (Docker HEALTHCHECK) |
 | `POST /v1/charges` | Create `PENDING` charge + fake EMV QR |
 | `GET /v1/charges/{id}` | Detail (`last_delivery_status` after simulate) |
 | `GET /v1/charges/by-payment/{payment_id}` | Lookup by wallet `payment_id` (404 if missing) |
@@ -33,19 +33,23 @@ HMAC is identical to AcmePay / `checkout-portal-next/lib/webhook-signature.ts`:
 `X-AcmePay-Signature: t=<unix>,v1=<hex>`. Shared secret default:
 `dev-webhook-secret`.
 
-## Quickstart
+## Quickstart (Docker)
 
-Go 1.23+. No extra services.
+No Go toolchain on the host. Wallet stacks (`pix-wallet-api` Sail,
+`payment-api-nest` compose) already start this image; this file is the
+isolated path.
 
 ```bash
-export WEBHOOK_SECRET=dev-webhook-secret
-export FAKE_PIX_API_KEY=fake-pix-demo   # optional; unset = open routes
-export PORT=8080
-go run ./cmd/provider
+docker compose up -d
+curl -s http://localhost:8080/health
 ```
 
+When this process runs in Docker, `callback_url` must be a hostname the
+**container** can resolve (`laravel.test`, `api`, or `host.docker.internal`),
+not `http://localhost/...` on the operator's machine.
+
 Create a charge (point `callback_url` at anything that accepts POST — tests use
-`httptest`; a local AcmePay webhook URL works the same):
+`httptest`):
 
 ```bash
 curl -s -X POST http://localhost:8080/v1/charges \
@@ -55,17 +59,18 @@ curl -s -X POST http://localhost:8080/v1/charges \
     "amount": 1500,
     "currency": "BRL",
     "payment_id": "550e8400-e29b-41d4-a716-446655440000",
-    "callback_url": "http://127.0.0.1:9999/v1/webhooks/payment"
+    "callback_url": "http://host.docker.internal:9999/v1/webhooks/payment"
   }'
 ```
 
 ### Wallet demo (create → by-payment → simulate)
 
-With `fake-pix-provider` on `:8080` and Laravel Sail (or Nest on `:3001`) up,
-create the payment on the **wallet** (it POSTs `/v1/charges` for you), look up
-the charge without scraping logs, then simulate. Point `callback_url` at the
-API webhook the Go process on the host can reach
-(`http://localhost/v1/webhooks/payment` for Sail).
+With Sail (`sail up -d`) or Nest (`docker compose up -d` in
+`payment-api-nest`) the PSP is already on `:8080`. Create the payment on the
+**wallet**, look up the charge without scraping logs, then simulate.
+
+Laravel callback is `http://laravel.test/v1/webhooks/payment`. Nest on the host
+uses `http://host.docker.internal:3001/v1/webhooks/payment`.
 
 ```bash
 # 1. Create on the wallet — copy `id` from the 201 body
@@ -89,27 +94,22 @@ A second simulate returns **200** `already_simulated` and does not POST again.
 The wallet queue worker must be running so the job can mark `PAID`
 (`./vendor/bin/sail artisan queue:work` on Laravel).
 
-Direct simulate (when you already have a charge id from create):
-
-```bash
-curl -s -X POST http://localhost:8080/v1/charges/<id>/simulate \
-  -H "Authorization: Bearer fake-pix-demo" \
-  -H "Content-Type: application/json" \
-  -d '{"type":"payment.paid"}'
-```
-
 Inbound auth also accepts `X-Api-Key: fake-pix-demo`. Amounts are integer minor
 units (`1500` = R$ 15,00). Never floats.
+
+`go run ./cmd/provider` still works for hacking on the binary; it is not the
+demo path.
 
 ## Quality gates
 
 ```bash
 go test ./...
 test -z "$(gofmt -l .)"
+docker build -t fake-pix-provider:local .
 ```
 
 ## Docs
 
 See [AGENTS.md](AGENTS.md) for the module map and agent workflow.
-Phase spec: [Docs/specs/fase-1-charges-webhooks.md](Docs/specs/fase-1-charges-webhooks.md).
+Phase spec: [Docs/specs/fase-3-docker.md](Docs/specs/fase-3-docker.md).
 ADR: [Docs/adrs/001-stdlib-and-in-memory.md](Docs/adrs/001-stdlib-and-in-memory.md).
