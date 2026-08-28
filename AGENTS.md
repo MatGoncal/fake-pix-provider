@@ -22,6 +22,7 @@ Domain: personal skill `payments-domain`.
 | Crypto | stdlib `crypto/hmac` SHA-256, header `t=<unix>,v1=<hex>` |
 | Tests | `go test` + `httptest` |
 | Lint | `gofmt -l` |
+| Packaging | Docker (fase 3); process inside is still stdlib + MemoryStore |
 
 ## Module map
 
@@ -37,7 +38,7 @@ Domain: personal skill `payments-domain`.
 
 | Path | Notes |
 |------|-------|
-| `GET /health` | Liveness |
+| `GET /health` | Liveness (Docker HEALTHCHECK) |
 | `POST /v1/charges` | Create `PENDING` charge + synthetic QR (**201** first; **200** replay by `payment_id`) |
 | `GET /v1/charges/{id}` | Charge detail (`last_delivery_status` after simulate) |
 | `GET /v1/charges/by-payment/{payment_id}` | Lookup by wallet `payment_id` (404 if missing) |
@@ -50,6 +51,7 @@ Domain: personal skill `payments-domain`.
 | Fase 0 bootstrap | `Docs/specs/fase-0-bootstrap.md` |
 | Fase 1 charges + webhooks | `Docs/specs/fase-1-charges-webhooks.md` |
 | Fase 2 idempotent create | `Docs/specs/fase-2-idempotent-create.md` |
+| Fase 3 Docker packaging | `Docs/specs/fase-3-docker.md` |
 | HMAC algorithm (Next twin) | `checkout-portal-next/lib/webhook-signature.ts` |
 | AcmePay webhook contract | `pix-wallet-api/Docs/specs/API_CONTRACT.md` |
 | ADRs | `Docs/adrs/` |
@@ -74,12 +76,13 @@ Domain: personal skill `payments-domain`.
 | 0 | Spec-driven bootstrap + `go.mod` + CI | `Docs/specs/fase-0-bootstrap.md` |
 | 1 | Charges + simulate + signed webhook delivery | `Docs/specs/fase-1-charges-webhooks.md` |
 | 2 | Idempotent create by `payment_id` (200 replay / 201 create) | `Docs/specs/fase-2-idempotent-create.md` |
+| 3 | Docker packaging (MemoryStore unchanged) | `Docs/specs/fase-3-docker.md` |
 
 ## Do NOT
 
 - Use `float`/`float64` for money — integer minor units only
 - Add Gin, Fiber, Chi, or another HTTP router
-- Add Postgres, Redis, Docker, or an outbox
+- Add Postgres, Redis, or an outbox
 - Call a real PSP
 - Change `pix-wallet-api`, `payment-api-nest`, Vue, or Next from this repo
   (wallet APIs call this process; wiring lives there)
