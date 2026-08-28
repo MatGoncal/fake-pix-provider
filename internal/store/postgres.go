@@ -60,13 +60,28 @@ func (s *PostgresStore) Close() error {
 	return s.db.Close()
 }
 
+const schemaAdvisoryLock int64 = 0x66616b6570 // "fakep" — cluster-wide serialize CREATE TABLE
+
 func (s *PostgresStore) migrate(ctx context.Context) error {
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, schemaAdvisoryLock); err != nil {
+		return err
+	}
+	defer func() {
+		_, _ = conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock($1)`, schemaAdvisoryLock)
+	}()
+
 	for _, stmt := range strings.Split(schemaSQL, ";") {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {
 			continue
 		}
-		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+		if _, err := conn.ExecContext(ctx, stmt); err != nil {
 			return err
 		}
 	}
