@@ -12,16 +12,6 @@ charges and retries undelivered webhooks. `go test` and `go run` without
 
 Fictional portfolio project. No real PSP.
 
-Synthetic PIX PSP in Go. This process **is** the provider: it creates a fake
-EMV charge and, on `simulate`, POSTs the canonical AcmePay webhook
-(`provider=fake_pix`) with Stripe-style `t=<unix>,v1=<hex>` HMAC.
-
-It is **not** the partner API (`POST /v1/payments`). Callers invent `payment_id`
-(the UUID AcmePay expects on `POST /v1/webhooks/payment`). Stdlib HTTP;
-in-memory store — **container restart drops all charges**.
-
-Fictional portfolio project. No real PSP.
-
 ## Architecture
 
 ```mermaid
